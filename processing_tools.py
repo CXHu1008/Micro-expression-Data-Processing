@@ -42,8 +42,7 @@ def align_face(img, img_land, box_enlarge, img_size):
     scale = (img_size - 1) / 2.0 / halfSize
     mat3 = np.asmatrix([[scale, 0, scale * (halfSize - cx)], [0, scale, scale * (halfSize - cy)], [0, 0, 1]])
     mat = mat3 * mat1
-    #print((mat[0:2, :]))
-    #print(mat1)
+
     aligned_img = cv2.warpAffine(img, mat[0:2, :], (img_size, img_size), cv2.INTER_LINEAR, borderValue=(128, 128, 128))
 
     land_3d = np.ones((int(len(img_land)/2), 3))
@@ -74,10 +73,10 @@ def img_pre_dlib(detector, predictor, img_path, box_enlarge=2.5, img_size=128):
 
 def compute_optical_flow_tvl1(prev_img, next_img, landmark):
     """
-    TV-L1 光流 + 完整人脸遮罩（脸轮廓 + 完整眉毛，连成一个大轮廓）
-    眉毛所有点向上 expand_px 像素，外部光流全部衰减
+    TV-L1 光流 + 完整人脸mask（脸轮廓 + 眉毛，连成一个大轮廓）
+    眉毛所有点向上 expand_px 像素，外部光流衰减
     """
-    # 转灰度
+
     if len(prev_img.shape) == 3:
         prev_gray = cv2.cvtColor(prev_img, cv2.COLOR_BGR2GRAY)
         next_gray = cv2.cvtColor(next_img, cv2.COLOR_BGR2GRAY)
@@ -85,7 +84,7 @@ def compute_optical_flow_tvl1(prev_img, next_img, landmark):
         prev_gray = prev_img
         next_gray = next_img
 
-    # TV-L1 计算光流
+    # TV-L1 光流
     tvl1 = cv2.optflow.DualTVL1OpticalFlow_create()
     flow = tvl1.calc(prev_gray, next_gray, None)
 
@@ -115,23 +114,19 @@ def compute_optical_flow_tvl1(prev_img, next_img, landmark):
     # 转成轮廓格式
     contour = np.array([contour], dtype=np.int32)
 
-    # 生成遮罩：内部=255，外部=0
+    # 生成mask：内部=255，外部=0
     mask = np.zeros((h, w), np.uint8)
     cv2.fillPoly(mask, contour, 255)
 
     # 非面部光流抑制
     flow[mask == 0] /= 3
 
-
-
-    # ========== 可视化 ==========
     mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
     hsv = np.zeros_like(prev_img)
     hsv[..., 0] = (ang * 180 / np.pi / 2).astype(np.uint8)
     hsv[..., 1] = 255
     hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
     flow_rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-
 
     x = np.mean(flow_rgb[mask == 0]) * 3
     flow_rgb[mask == 0] = np.clip(flow_rgb[mask == 0], a_min=None, a_max=x)
