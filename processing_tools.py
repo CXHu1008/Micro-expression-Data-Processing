@@ -5,7 +5,6 @@ import os
 import dlib
 
 
-##脸周的关键点编号是0-16，左眉毛是17-21，右眉毛是22-26，鼻子是27-35，左眼是36-41，右眼是42-47，嘴巴是48-67
 def align_face(img, img_land, box_enlarge, img_size):
 
     leftEye0 = (img_land[2 * 37] + img_land[2 * 38] + img_land[2 * 39] + img_land[2 * 40] + img_land[2 * 41] +
@@ -20,8 +19,7 @@ def align_face(img, img_land, box_enlarge, img_size):
     deltaX = float(rightEye0 - leftEye0)
     deltaY = float(rightEye1 - leftEye1)
     l = math.sqrt(deltaX * deltaX + deltaY * deltaY)
-    #print("pupil distance:",l)
-    #print(deltaX,deltaY)
+
     sinVal = deltaY / l
     cosVal = deltaX / l
     mat1 = np.asmatrix([[cosVal, sinVal, 0], [-sinVal, cosVal, 0], [0, 0, 1]])
@@ -55,10 +53,10 @@ def align_face(img, img_land, box_enlarge, img_size):
 
 
 
-#检测人脸关键点并对齐
+
 def img_pre_dlib(detector, predictor, img_path, box_enlarge=2.5, img_size=128):
 
-    img = cv2.imread(img_path)#[:,80:560]
+    img = cv2.imread(img_path)
 
     img_dlib = dlib.load_rgb_image(img_path)
     dets = detector(img_dlib, 1)
@@ -72,10 +70,6 @@ def img_pre_dlib(detector, predictor, img_path, box_enlarge=2.5, img_size=128):
 
 
 def compute_optical_flow_tvl1(prev_img, next_img, landmark):
-    """
-    TV-L1 光流 + 完整人脸mask（脸轮廓 + 眉毛，连成一个大轮廓）
-    眉毛所有点向上 expand_px 像素，外部光流衰减
-    """
 
     if len(prev_img.shape) == 3:
         prev_gray = cv2.cvtColor(prev_img, cv2.COLOR_BGR2GRAY)
@@ -84,41 +78,33 @@ def compute_optical_flow_tvl1(prev_img, next_img, landmark):
         prev_gray = prev_img
         next_gray = next_img
 
-    # TV-L1 光流
     tvl1 = cv2.optflow.DualTVL1OpticalFlow_create()
     flow = tvl1.calc(prev_gray, next_gray, None)
 
     h, w = prev_img.shape[:2]
     expand_px = int(h / 10)
 
-
-    # ===================== 构建完整人脸闭合轮廓 =====================
     contour = []
-    # 1. 左眉毛：21→20→19→18→17（从左眉内侧回到外侧，闭合轮廓）
     for i in range(21, 16, -1):
         x = int(landmark[2*i])
-        y = int(landmark[2*i + 1]) - expand_px  # 整体上移
+        y = int(landmark[2*i + 1]) - expand_px
         contour.append([x, y])
 
-    # 2. 脸部轮廓：0→1→…→16（右侧脸颊 → 下巴 → 左侧脸颊）
     for i in range(0, 17):
         x = int(landmark[2*i])
         y = int(landmark[2*i + 1])
         contour.append([x, y])
-    # 3. 右眉毛：22→23→24→25→26（从右眉外侧到内侧）
+
     for i in range(26, 22, -1):
         x = int(landmark[2*i])
-        y = int(landmark[2*i + 1]) - expand_px  # 根据眉毛关键点向上偏移
+        y = int(landmark[2*i + 1]) - expand_px 
         contour.append([x, y])
 
-    # 转成轮廓格式
     contour = np.array([contour], dtype=np.int32)
 
-    # 生成mask：内部=255，外部=0
     mask = np.zeros((h, w), np.uint8)
     cv2.fillPoly(mask, contour, 255)
 
-    # 非面部光流抑制
     flow[mask == 0] /= 3
 
     mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
